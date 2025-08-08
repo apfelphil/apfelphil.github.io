@@ -130,6 +130,8 @@
       }
     }
   </style>
+  <!-- jsPDF library for PDF export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
   <div class="container">
@@ -271,6 +273,15 @@
           actionRow.appendChild(editCust);
           actionRow.appendChild(deleteCust);
           actionRow.appendChild(addQuotaBtn);
+
+          // PDF export button
+          const pdfBtn = document.createElement('button');
+          pdfBtn.textContent = '📄 PDF-Export';
+          pdfBtn.onclick = function(e) {
+            e.stopPropagation();
+            exportPdf(customer);
+          };
+          actionRow.appendChild(pdfBtn);
           details.appendChild(actionRow);
           // Logs list
           const logsContainer = document.createElement('div');
@@ -433,6 +444,54 @@
       });
       // Initial render
       render();
+      // PDF export helper using jsPDF
+      function exportPdf(customer) {
+        // Ensure jsPDF is loaded
+        if (!window.jspdf) {
+          alert('PDF-Bibliothek konnte nicht geladen werden.');
+          return;
+        }
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        let y = 10;
+        doc.setFontSize(16);
+        const titleName = [customer.lname, customer.fname].filter(Boolean).join(', ');
+        doc.text(`Kundenlog`, 10, y);
+        y += 8;
+        doc.setFontSize(12);
+        doc.text(`Kunde: ${titleName || customer.company || 'Unbenannter Kunde'}`, 10, y);
+        y += 6;
+        if (customer.company) {
+          doc.text(`Firma: ${customer.company}`, 10, y);
+          y += 6;
+        }
+        const quotaStr = customer.quota != null ? `${customer.quota.toFixed(2)}h` : '-';
+        doc.text(`Kontingent: ${quotaStr}`, 10, y);
+        y += 10;
+        doc.setFontSize(14);
+        doc.text('Einträge', 10, y);
+        y += 6;
+        doc.setFontSize(11);
+        if (customer.logs && customer.logs.length) {
+          customer.logs.forEach(log => {
+            const line = `${log.date} | ${log.hours}h | ${log.desc}`;
+            // Wrap long text lines
+            const lines = doc.splitTextToSize(line, 180);
+            lines.forEach(l => {
+              if (y > 280) {
+                doc.addPage();
+                y = 10;
+              }
+              doc.text(l, 10, y);
+              y += 6;
+            });
+          });
+        } else {
+          doc.text('Keine Einträge vorhanden.', 10, y);
+        }
+        const fileName = `kundenlog_${customer.lname || ''}_${customer.fname || ''}.pdf`;
+        doc.save(fileName);
+      }
     })();
   </script>
 </body>
