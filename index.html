@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kundenlog</title>
+  <style>
+    /* Color variables for light and dark mode */
+    :root {
+      --bg: #ffffff;
+      --text: #000000;
+      --card-bg: #f0f0f0;
+      --button-bg: #007bff;
+      --button-text: #ffffff;
+    }
+    .dark {
+      --bg: #121212;
+      --text: #ffffff;
+      --card-bg: #1d1d1d;
+      --button-bg: #3a86ff;
+      --button-text: #ffffff;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      background-color: var(--bg);
+      color: var(--text);
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 15px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.5em;
+    }
+    header button {
+      background-color: var(--button-bg);
+      color: var(--button-text);
+      border: none;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    section {
+      margin-bottom: 20px;
+    }
+    input {
+      margin: 5px 0;
+      padding: 5px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+    }
+    #addCustomer button, #searchSection button {
+      margin-top: 10px;
+      background-color: var(--button-bg);
+      color: var(--button-text);
+      border: none;
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #customerList .customer-card {
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      margin-bottom: 10px;
+      background-color: var(--card-bg);
+      overflow: hidden;
+    }
+    .customer-summary {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px;
+      cursor: pointer;
+    }
+    .customer-summary:hover {
+      background-color: rgba(0,0,0,0.05);
+    }
+    .customer-summary span:last-child {
+      font-size: 0.9em;
+      color: #666;
+    }
+    .customer-details {
+      display: none;
+      padding: 10px;
+      border-top: 1px solid #ccc;
+    }
+    .customer-details > div {
+      margin-bottom: 10px;
+    }
+    .customer-details button {
+      background-color: var(--button-bg);
+      color: var(--button-text);
+      border: none;
+      margin-right: 5px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .customer-details input {
+      margin-right: 5px;
+    }
+    .log-entry {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 0;
+      border-top: 1px solid #aaa;
+    }
+    .log-entry span {
+      flex: 1;
+      margin-right: 10px;
+    }
+    @media (max-width: 600px) {
+      .customer-summary {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .customer-summary span:last-child {
+        margin-top: 4px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Kundenlog</h1>
+      <button id="darkToggle">🌙 Dunkelmodus</button>
+    </header>
+    <!-- Section for adding new customers -->
+    <section id="addCustomer">
+      <h2>Kunden hinzufügen</h2>
+      <input id="fname" placeholder="Vorname">
+      <input id="lname" placeholder="Nachname">
+      <input id="company" placeholder="Firma (optional)">
+      <input id="quota" type="number" placeholder="Stunden (optional)" min="0" step="0.25">
+      <br>
+      <button id="addCustomerBtn">+ Kunde anlegen</button>
+      <button id="importBtn">📥 Backup importieren</button>
+      <button id="exportBtn">🔄 Backup exportieren</button>
+    </section>
+    <!-- Search bar -->
+    <section id="searchSection">
+      <input id="searchInput" placeholder="Suche Kunden..." style="width:100%; padding:6px;">
+    </section>
+    <!-- Container for listing customers -->
+    <section id="customerList"></section>
+    <!-- Hidden file input for imports -->
+    <input type="file" id="fileInput" style="display:none;">
+  </div>
+  <script>
+    (function() {
+      // In-memory representation of customers
+      let customers = [];
+      // Load from storage if available
+      const saved = localStorage.getItem('kundenlogData');
+      if (saved) {
+        try {
+          customers = JSON.parse(saved);
+        } catch (e) {
+          customers = [];
+        }
+      }
+      // Dark mode
+      let darkMode = localStorage.getItem('darkMode') === 'true';
+      if (darkMode) document.body.classList.add('dark');
+      // Persist current customers
+      function persist() {
+        localStorage.setItem('kundenlogData', JSON.stringify(customers));
+      }
+      // Render the customer list
+      function render() {
+        const listEl = document.getElementById('customerList');
+        const searchValue = document.getElementById('searchInput').value.toLowerCase();
+        listEl.innerHTML = '';
+        // Sort by last name then first name
+        const sorted = [...customers].sort((a, b) => {
+          const nameA = `${a.lname || ''}${a.fname || ''}`.toLowerCase();
+          const nameB = `${b.lname || ''}${b.fname || ''}`.toLowerCase();
+          return nameA.localeCompare(nameB, 'de');
+        });
+        sorted.forEach(customer => {
+          const fullName = [customer.lname, customer.fname].filter(Boolean).join(', ');
+          if (searchValue && !(fullName.toLowerCase().includes(searchValue) || (customer.company || '').toLowerCase().includes(searchValue))) {
+            return;
+          }
+          // Compute last log date and remaining quota
+          let lastDate = '';
+          let quotaText = '';
+          if (customer.logs && customer.logs.length) {
+            lastDate = customer.logs.reduce((max, log) => {
+              return !max || new Date(log.date) > new Date(max) ? log.date : max;
+            }, '');
+          }
+          if (customer.quota != null) {
+            quotaText = `${customer.quota.toFixed(2)}h`;
+          }
+          // Card
+          const card = document.createElement('div');
+          card.className = 'customer-card';
+          // Summary row
+          const summary = document.createElement('div');
+          summary.className = 'customer-summary';
+          const nameSpan = document.createElement('span');
+          nameSpan.textContent = fullName || customer.company || 'Unbenannter Kunde';
+          const infoSpan = document.createElement('span');
+          let infoParts = [];
+          if (lastDate) infoParts.push(`Letzter: ${lastDate}`);
+          if (quotaText) infoParts.push(`Kontingent: ${quotaText}`);
+          infoSpan.textContent = infoParts.join(' | ');
+          summary.appendChild(nameSpan);
+          summary.appendChild(infoSpan);
+          card.appendChild(summary);
+          // Details area
+          const details = document.createElement('div');
+          details.className = 'customer-details';
+          // Top row with editing actions
+          const actionRow = document.createElement('div');
+          // Edit customer
+          const editCust = document.createElement('button');
+          editCust.textContent = '✎ Kunde';
+          editCust.onclick = function(e) {
+            e.stopPropagation();
+            const newFname = prompt('Vorname:', customer.fname || '');
+            if (newFname === null) return;
+            const newLname = prompt('Nachname:', customer.lname || '');
+            if (newLname === null) return;
+            const newComp = prompt('Firma:', customer.company || '');
+            if (newComp === null) return;
+            customer.fname = newFname.trim();
+            customer.lname = newLname.trim();
+            customer.company = newComp.trim();
+            persist();
+            render();
+          };
+          // Delete customer
+          const deleteCust = document.createElement('button');
+          deleteCust.textContent = '🗑️ Kunde';
+          deleteCust.onclick = function(e) {
+            e.stopPropagation();
+            if (confirm('Kunde wirklich löschen?')) {
+              customers = customers.filter(c => c.id !== customer.id);
+              persist();
+              render();
+            }
+          };
+          // Add quota
+          const addQuotaBtn = document.createElement('button');
+          addQuotaBtn.textContent = '+ Kontingent';
+          addQuotaBtn.onclick = function(e) {
+            e.stopPropagation();
+            const q = prompt('Stunden hinzufügen:', '');
+            if (q === null) return;
+            const hours = parseFloat(q);
+            if (!isNaN(hours)) {
+              customer.quota = (customer.quota || 0) + hours;
+              persist();
+              render();
+            }
+          };
+          actionRow.appendChild(editCust);
+          actionRow.appendChild(deleteCust);
+          actionRow.appendChild(addQuotaBtn);
+          details.appendChild(actionRow);
+          // Logs list
+          const logsContainer = document.createElement('div');
+          if (!customer.logs) customer.logs = [];
+          customer.logs.forEach((log, index) => {
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            const info = document.createElement('span');
+            info.textContent = `${log.date} | ${log.hours}h | ${log.desc}`;
+            const editLogBtn = document.createElement('button');
+            editLogBtn.textContent = '✎';
+            editLogBtn.onclick = function(e) {
+              e.stopPropagation();
+              const newDate = prompt('Datum (YYYY-MM-DD):', log.date);
+              if (newDate === null) return;
+              const newDesc = prompt('Beschreibung:', log.desc);
+              if (newDesc === null) return;
+              const newHoursStr = prompt('Stunden:', log.hours);
+              if (newHoursStr === null) return;
+              const newHours = parseFloat(newHoursStr);
+              if (!isNaN(newHours)) {
+                // Adjust quota
+                if (customer.quota != null) {
+                  customer.quota += log.hours - newHours;
+                }
+                log.date = newDate;
+                log.desc = newDesc;
+                log.hours = newHours;
+                persist();
+                render();
+              }
+            };
+            const deleteLogBtn = document.createElement('button');
+            deleteLogBtn.textContent = '🗑️';
+            deleteLogBtn.onclick = function(e) {
+              e.stopPropagation();
+              if (confirm('Eintrag löschen?')) {
+                // Return hours to quota if tracking
+                if (customer.quota != null) {
+                  customer.quota += log.hours;
+                }
+                customer.logs.splice(index, 1);
+                persist();
+                render();
+              }
+            };
+            entry.appendChild(info);
+            entry.appendChild(editLogBtn);
+            entry.appendChild(deleteLogBtn);
+            logsContainer.appendChild(entry);
+          });
+          details.appendChild(logsContainer);
+          // Form for adding log entry
+          const logForm = document.createElement('div');
+          const dateInput = document.createElement('input');
+          dateInput.type = 'date';
+          dateInput.value = new Date().toISOString().split('T')[0];
+          const descInput = document.createElement('input');
+          descInput.placeholder = 'Beschreibung';
+          const hoursInput = document.createElement('input');
+          hoursInput.type = 'number';
+          hoursInput.step = '0.25';
+          hoursInput.placeholder = 'Stunden';
+          hoursInput.min = '0';
+          const addLogBtn = document.createElement('button');
+          addLogBtn.textContent = '+ Eintrag';
+          addLogBtn.onclick = function(e) {
+            e.stopPropagation();
+            const d = dateInput.value;
+            const desc = descInput.value;
+            const hrs = parseFloat(hoursInput.value);
+            if (!d || !desc || isNaN(hrs)) {
+              alert('Bitte alle Felder ausfüllen.');
+              return;
+            }
+            customer.logs.push({ date: d, desc: desc, hours: hrs });
+            if (customer.quota != null) {
+              customer.quota -= hrs;
+            }
+            persist();
+            render();
+          };
+          logForm.appendChild(dateInput);
+          logForm.appendChild(descInput);
+          logForm.appendChild(hoursInput);
+          logForm.appendChild(addLogBtn);
+          details.appendChild(logForm);
+          // Toggle details on summary click
+          summary.addEventListener('click', function() {
+            details.style.display = details.style.display === 'none' || details.style.display === '' ? 'block' : 'none';
+          });
+          card.appendChild(details);
+          listEl.appendChild(card);
+        });
+      }
+      // Event handlers
+      document.getElementById('addCustomerBtn').addEventListener('click', function() {
+        const fname = document.getElementById('fname').value.trim();
+        const lname = document.getElementById('lname').value.trim();
+        const company = document.getElementById('company').value.trim();
+        const quotaVal = parseFloat(document.getElementById('quota').value);
+        const newCustomer = {
+          id: Date.now().toString(),
+          fname: fname || '',
+          lname: lname || '',
+          company: company || '',
+          quota: isNaN(quotaVal) ? null : quotaVal,
+          logs: []
+        };
+        customers.push(newCustomer);
+        // Clear inputs
+        document.getElementById('fname').value = '';
+        document.getElementById('lname').value = '';
+        document.getElementById('company').value = '';
+        document.getElementById('quota').value = '';
+        persist();
+        render();
+      });
+      document.getElementById('searchInput').addEventListener('input', render);
+      document.getElementById('darkToggle').addEventListener('click', function() {
+        darkMode = !darkMode;
+        if (darkMode) document.body.classList.add('dark');
+        else document.body.classList.remove('dark');
+        localStorage.setItem('darkMode', darkMode ? 'true' : 'false');
+      });
+      document.getElementById('exportBtn').addEventListener('click', function() {
+        const data = JSON.stringify(customers);
+        const blob = new Blob([data], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'kundenlog-backup.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      });
+      document.getElementById('importBtn').addEventListener('click', function() {
+        document.getElementById('fileInput').click();
+      });
+      document.getElementById('fileInput').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          try {
+            const imported = JSON.parse(evt.target.result);
+            if (Array.isArray(imported)) {
+              customers = imported;
+              persist();
+              render();
+            } else {
+              alert('Ungültige Backup-Datei.');
+            }
+          } catch (err) {
+            alert('Import fehlgeschlagen: ' + err.message);
+          }
+        };
+        reader.readAsText(file);
+        // Reset input so the same file can be selected again
+        e.target.value = '';
+      });
+      // Initial render
+      render();
+    })();
+  </script>
+</body>
+</html>
